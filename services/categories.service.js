@@ -7,7 +7,7 @@ const {
 	Update,
 	Delete,
 	NotFound,
-	Response,
+	ServerError,
 } = require("../lib/response");
 const Redis = require("ioredis");
 const redis = new Redis();
@@ -30,16 +30,18 @@ module.exports = {
 			async handler(ctx) {
 				const categoriesRedis = await redis.get("categories");
 				let data = JSON.parse(categoriesRedis);
-				if (!data) {
+				// console.log("data", data);
+				if (!data || (data && data.length == 0)) {
 					data = await this.adapter.find({});
+					if (data.length == 0) {
+						throw NotFound("Categories");
+					}
 					await redis.setex(
 						"categories",
 						ONE_DAY,
 						JSON.stringify(data)
 					);
-					return Get(ctx, data);
 				}
-
 				return Get(ctx, data);
 			},
 		},
@@ -53,9 +55,13 @@ module.exports = {
 			},
 			async handler(ctx) {
 				// const { title, content } = ctx.params;
-				const category = await this.adapter.insert(ctx.params);
-				await this.saveCategoriesInRedis();
-				return Create(ctx, null, category);
+				try {
+					const category = await this.adapter.insert(ctx.params);
+					await this.saveCategoriesInRedis();
+					return Create(ctx, null, category);
+				} catch (error) {
+					throw ServerError();
+				}
 			},
 		},
 		get: {
@@ -70,7 +76,7 @@ module.exports = {
 				if (data) {
 					return Get(ctx, data);
 				} else {
-					return NotFound(ctx, "Category");
+					throw NotFound("Category");
 				}
 			},
 		},
@@ -96,7 +102,7 @@ module.exports = {
 					await this.saveCategoriesInRedis();
 					return Update(ctx, data);
 				} else {
-					return NotFound(ctx, "Category");
+					throw NotFound("Category");
 				}
 			},
 		},
@@ -114,7 +120,7 @@ module.exports = {
 					await this.saveCategoriesInRedis();
 					return Delete(ctx, data);
 				} else {
-					return NotFound(ctx, "Category");
+					throw NotFound("Category");
 				}
 			},
 		},

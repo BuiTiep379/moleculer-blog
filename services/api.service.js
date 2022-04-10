@@ -1,7 +1,7 @@
 "use strict";
 
 const ApiGateway = require("moleculer-web");
-const { MoleculerError } = require("moleculer").Errors;
+const { Unauthenticated, Unauthorized } = require("../lib/response");
 const Redis = require("ioredis");
 const redis = new Redis();
 const _ = require("lodash");
@@ -97,19 +97,22 @@ module.exports = {
 			// Return with the error as JSON object
 			res.setHeader("Content-type", "application/json; charset=utf-8");
 			res.writeHead(err.code || 500);
-
+			let errorObject = {};
 			if (err.code == 422) {
-				let errorObject = {};
 				err.data.forEach((e) => {
 					let field = e.field;
 					errorObject[field] = e.message;
 				});
 
 				res.end(JSON.stringify({ errors: errorObject }));
+			} else if (err.name == "TokenExpiredError") {
+				errorObject = _.pick(err, ["message"]);
+				errorObject.type = "JWT_EXPIRED_ERROR";
+				res.end(JSON.stringify({ errors: errorObject }));
 			} else {
 				// pick chỉ lấy field chỉ định
-				const errorObject = _.pick(err, ["message"]);
-				res.end(JSON.stringify(errorObject));
+				errorObject = _.pick(err, ["message", "type"]);
+				res.end(JSON.stringify({ errors: errorObject }));
 			}
 			this.logResponse(req, res, err ? err.ctx : null);
 		},
@@ -144,31 +147,19 @@ module.exports = {
 					// console.log("redisToken: ", redisToken);
 					if (!redisToken) {
 						// Invalid token
-						throw new MoleculerError(
-							"Authentication failed",
-							401,
-							"ERR_AUTHENTICATE"
-						);
+						throw Unauthenticated();
 					}
 					ctx.meta.user = res.data;
 					ctx.meta.token = token;
 					return res.data;
 				} else {
 					// Invalid token
-					throw new MoleculerError(
-						"Authentication failed",
-						401,
-						"ERR_AUTHENTICATE"
-					);
+					throw Unauthenticated();
 				}
 			} else {
 				// No token. Throw an error or do nothing if anonymous access is allowed.
 				// throw new E.UnAuthorizedError(E.ERR_NO_TOKEN);
-				throw new MoleculerError(
-					"Authentication failed",
-					401,
-					"ERR_AUTHENTICATE"
-				);
+				throw Unauthenticated();
 			}
 		},
 
@@ -189,18 +180,17 @@ module.exports = {
 				method,
 				route: { name },
 			} = req.$alias;
-			const { userId, permissions } = ctx.meta.user;
+			const { userId, permissions, role } = ctx.meta.user;
 			console.log("method, name ", method, name);
+			if (role == "Admin") {
+				return;
+			}
 			if (
 				req.$action.auth === "required" &&
 				!userId &&
 				Object.keys(permissions).length == 0
 			) {
-				throw new MoleculerError(
-					"Authorization failed",
-					403,
-					"ERR_AUTHORIZATION"
-				);
+				throw Unauthorized();
 			}
 			let check = false;
 			_.forIn(permissions, (value, key) => {
@@ -215,11 +205,7 @@ module.exports = {
 			if (check) {
 				return;
 			} else {
-				throw new MoleculerError(
-					"Authorization failed",
-					403,
-					"ERR_AUTHORIZATION"
-				);
+				throw Unauthorized();
 			}
 		},
 	},

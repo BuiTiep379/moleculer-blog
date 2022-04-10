@@ -12,18 +12,19 @@ module.exports = {
 		dialect: "mysql",
 	}),
 	model: userPermission,
-	hooks: {
-		before: {
-			"*": (req, res) => {
-				console.log("res", res);
-				console.log("req", req);
-				return;
-			},
-		},
-	},
+	// hooks: {
+	// 	before: {
+	// 		"*": (req, res) => {
+	// 			console.log("res", res);
+	// 			console.log("req", req);
+	// 			return;
+	// 		},
+	// 	},
+	// },
 	actions: {
 		create: {
 			path: "POST /:userId",
+			auth: "required",
 			params: {
 				userId: "string",
 				permissionId: "number",
@@ -49,6 +50,7 @@ module.exports = {
 		},
 		delete: {
 			path: "DELETE /:userId",
+			auth: "required",
 			params: {
 				userId: "string",
 				permissionId: "number",

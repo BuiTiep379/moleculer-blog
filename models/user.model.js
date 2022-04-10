@@ -24,6 +24,10 @@ const userModel = {
 			type: Sequelize.STRING,
 			allowNull: false,
 		},
+		role: {
+			type: Sequelize.STRING,
+			defaultValue: "User",
+		},
 	},
 };
 module.exports = userModel;

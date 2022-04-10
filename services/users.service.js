@@ -80,9 +80,6 @@ module.exports = {
 						email: entity.email,
 					},
 				});
-				// const entityExists = await this.adapter.db.query(
-				// 	`SELECT * FROM users WHERE email = "${entity.email}"`
-				// );
 				if (!entityExists) {
 					return InputError(ctx, { message: "Email not registered" });
 				}
@@ -99,6 +96,7 @@ module.exports = {
 				const payload = {
 					permissions,
 					userId: user.id,
+					role: user.role,
 				};
 				const token = this.generateJWT(payload);
 				const timestamps = new Date();
