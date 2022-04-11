@@ -1,6 +1,8 @@
 const postModel = require("../models/post.model");
 const SqlAdapter = require("moleculer-db-adapter-sequelize");
 const DbService = require("moleculer-db");
+const { QueryTypes } = require("sequelize");
+const _ = require("lodash");
 const {
 	Get,
 	Create,
@@ -10,6 +12,7 @@ const {
 	Response,
 	BadRequest,
 } = require("../lib/response");
+const getPagingData = require("../lib/pagination");
 const Redis = require("ioredis");
 const redis = new Redis();
 const ONE_DAY = 24 * 60 * 60;
@@ -27,16 +30,39 @@ module.exports = {
 	actions: {
 		list: {
 			rest: "GET /",
+
 			auth: "required",
 			async handler(ctx) {
 				const postRedis = await redis.get("post");
 				let data = JSON.parse(postRedis);
+				const page = Number(ctx.params.page) || 1;
+				const limit = Number(ctx.params.size) || 10;
 				if (!data) {
-					data = await this.adapter.find({});
-					await redis.setex("posts", ONE_DAY, JSON.stringify(data));
-					return Get(ctx, data);
-				}
+					data = await this.adapter.db.query(
+						`SELECT p.id, p.title, p.content, U.firstName, U.email
+					FROM posts as P, users as U
+					WHERE U.id = P.authorId;`,
+						{
+							type: QueryTypes.SELECT,
+						}
+					);
 
+					if (data.length == 0) {
+						throw NotFound("Posts");
+					}
+					data = this.refactorPosts(data);
+					await redis.setex("posts", ONE_DAY, JSON.stringify(data));
+				}
+				data = getPagingData(data, page, limit);
+				// const data = await this.adapter.db.query(
+				// 	`SELECT p.id, p.title, p.content, U.firstName, U.email
+				// 		FROM posts as P, users as U
+				// 		WHERE U.id = P.authorId LIMIT ?, ?`,
+				// 	{
+				// 		type: QueryTypes.SELECT,
+				// 		replacements: [offset, limit],
+				// 	}
+				// );
 				return Get(ctx, data);
 			},
 		},
@@ -67,11 +93,21 @@ module.exports = {
 			},
 			async handler(ctx) {
 				const { id } = ctx.params;
-				const data = await this.adapter.findById(id);
+				const data = await this.getSinglePost(id);
 				if (data) {
-					return Get(ctx, data);
+					const { id, title, content, firstName, email } = data[0];
+					const post = {
+						id,
+						title,
+						content,
+						user: {
+							firstName,
+							email,
+						},
+					};
+					return Get(ctx, post);
 				} else {
-					return NotFound(ctx, "Post");
+					throw NotFound("Post");
 				}
 			},
 		},
@@ -102,7 +138,7 @@ module.exports = {
 						return BadRequest(ctx, "Cannot update Post");
 					}
 				} else {
-					return NotFound(ctx, "Post");
+					throw NotFound("Post");
 				}
 			},
 		},
@@ -124,9 +160,40 @@ module.exports = {
 						return BadRequest(ctx, "Cannot delete post");
 					}
 				} else {
-					return NotFound(ctx, "Category");
+					throw NotFound("Post");
 				}
 			},
+		},
+	},
+	methods: {
+		refactorPosts(data) {
+			let posts = [];
+			_.forEach(data, (item) => {
+				const { id, title, content, firstName, email } = item;
+				const newItem = {
+					id,
+					title,
+					content,
+					user: {
+						firstName,
+						email,
+					},
+				};
+				posts.push(newItem);
+			});
+			return posts;
+		},
+		getSinglePost: async function (id) {
+			const data = await this.adapter.db.query(
+				`SELECT p.id, p.title, p.content, U.firstName, U.email
+			FROM posts as P, users as U
+			WHERE U.id = P.authorId AND P.id = ?`,
+				{
+					replacements: [Number(id)],
+					type: QueryTypes.SELECT,
+				}
+			);
+			return data;
 		},
 	},
 };

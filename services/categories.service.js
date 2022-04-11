@@ -9,6 +9,7 @@ const {
 	NotFound,
 	ServerError,
 } = require("../lib/response");
+const getPagingData = require("../lib/pagination");
 const Redis = require("ioredis");
 const redis = new Redis();
 const ONE_DAY = 24 * 60 * 60;
@@ -30,7 +31,8 @@ module.exports = {
 			async handler(ctx) {
 				const categoriesRedis = await redis.get("categories");
 				let data = JSON.parse(categoriesRedis);
-				// console.log("data", data);
+				const page = Number(ctx.params.page) || 1;
+				const limit = Number(ctx.params.size) || 10;
 				if (!data || (data && data.length == 0)) {
 					data = await this.adapter.find({});
 					if (data.length == 0) {
@@ -42,6 +44,8 @@ module.exports = {
 						JSON.stringify(data)
 					);
 				}
+				console.log("data", data);
+				data = getPagingData(data, page, limit);
 				return Get(ctx, data);
 			},
 		},
